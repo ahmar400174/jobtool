@@ -15,7 +15,12 @@ Open http://127.0.0.1:8765. The UI uses the local API automatically.
 
 ## Deploy the backend
 
-Import `ahmar400174/jobtool` into Vercel using the **Hobby** plan.
+The deployed backend is https://jobtool1.vercel.app on **Vercel Hobby**.
+Vercel cloned the source into `ahmar400174/jobtool1` during import; that repository
+drives automatic backend deployments. The original workspace source is also
+maintained at `ahmar400174/jobtool`.
+
+For a new deployment, import the repository into Vercel using the **Hobby** plan.
 Framework: **Flask**. Root directory: repository root. No custom build command.
 `app.py` exposes the WSGI app. `vercel.json` configures a 300-second maximum
 function duration. Set this production environment variable:
@@ -42,7 +47,7 @@ npx firebase-tools deploy --only hosting --project jobs-tool --account ahmar4001
 
 Only `web/` is published at https://jobs-tool.web.app. Firebase client
 configuration is public SDK configuration, not a deployment credential.
-The API URL stays blank until the backend exists; the page reports pending setup.
+The production API URL is configured as `https://jobtool1.vercel.app`.
 
 ## Verification and coverage
 
