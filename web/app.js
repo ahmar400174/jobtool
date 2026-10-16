@@ -123,7 +123,7 @@ function complete(data) {
   $('coverage').hidden = false;
   $('coverage-content').replaceChildren(...[data.coverage, ...errors, ...warnings].map(message => node('p', message)));
   const allFailed = Object.values(data.source_statuses).filter(value => value !== 'disabled').every(value => value === 'failed');
-  status(allFailed ? 'The selected platforms could not be reached. See platform issues below and try again later.' : data.export_error || `Search finished in ${data.elapsed_seconds.toFixed(1)} seconds.${errors.length ? ` ${errors.length} platforms could not be reached.` : ''}`, allFailed || Boolean(data.export_error));
+  status(allFailed ? 'The selected platforms could not be reached. See platform issues below and try again later.' : data.export_error || `Search finished in ${data.elapsed_seconds.toFixed(1)} seconds.${errors.length ? ` ${errors.length} ${errors.length === 1 ? 'platform' : 'platforms'} could not be reached.` : ''}`, allFailed || Boolean(data.export_error));
 }
 
 async function searchPlatforms(search) {

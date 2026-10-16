@@ -60,6 +60,11 @@ node --check web/config.js
 Live checks include a platform search, result links, coverage warnings, and
 opening the downloaded Excel workbook.
 
+Verified on 2026-10-16: 106 offline tests passed. A browser search across all
+13 platforms returned 130 unique jobs in 17.6 seconds; 12 platforms completed
+and LinkedIn was blocked. The Excel file downloaded from the Firebase page
+opened successfully with all 130 job rows. The API health check also passed.
+
 For free hosting, each platform returns up to 100 matches and 240 KB of text.
 Descriptions are excerpts of up to 2000 characters; original listings are linked.
 Queries check up to one LinkedIn page per keyword, two Himalayas/public pages,
