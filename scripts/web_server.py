@@ -6,6 +6,7 @@ Results are temporary, unguessable, and isolated from desktop output files.
 from __future__ import annotations
 
 import copy
+import json
 import logging
 import os
 import secrets
@@ -16,14 +17,15 @@ from datetime import date
 
 from flask import Flask, jsonify, request, send_file
 
-from job_finder.aggregator import fetch_all
+from job_finder.aggregator import fetch_all, _dedupe
 from job_finder.config import load_settings, project_root
 from job_finder.countries import COUNTRIES, normalize_country
 from job_finder.export import export_excel
+from job_finder.models import JobListing
 from job_finder.source_catalog import SOURCES
 
 app = Flask(__name__, static_folder=str(project_root() / "web"), static_url_path="")
-app.config["MAX_CONTENT_LENGTH"] = 16 * 1024
+app.config["MAX_CONTENT_LENGTH"] = 4 * 1024 * 1024
 log = logging.getLogger(__name__)
 ORIGINS = set(os.environ.get("ALLOWED_ORIGINS", "https://jobs-tool.web.app,https://jobs-tool.firebaseapp.com,http://localhost:8080,http://127.0.0.1:8080").split(","))
 if os.environ.get("RENDER_EXTERNAL_URL"):
@@ -72,7 +74,93 @@ def health():
 
 @app.get("/api/config")
 def configuration():
-    return jsonify(countries=list(COUNTRIES), sources=[{"key": key, "label": label} for key, label, _ in SOURCES])
+    return jsonify(execution_mode="per_source", countries=list(COUNTRIES),
+                   sources=[{"key": key, "label": label} for key, label, _ in SOURCES])
+
+
+@app.route("/api/source", methods=["POST", "OPTIONS"])
+def source_search():
+    """One bounded platform per invocation; no background work after response."""
+    if request.method == "OPTIONS":
+        return "", 204
+    if request.content_length and request.content_length > 16 * 1024:
+        return jsonify(error="Search request is too large."), 413
+    try:
+        settings = search_settings(request.get_json(silent=True))
+        enabled = [key for key, cfg in settings["sources"].items() if cfg.get("enabled")]
+        if len(enabled) != 1:
+            raise ValueError("Choose exactly one platform per request.")
+        settings["sources"]["linkedin"]["max_pages"] = 1
+        settings["sources"]["himalayas"]["max_pages"] = 2
+        settings["sources"]["hackernews"].update(max_comments=30, months=1)
+    except ValueError as exc:
+        return jsonify(error=str(exc)), 400
+    try:
+        jobs, counts = fetch_all(settings)
+    except Exception:
+        log.exception("Platform search failed")
+        return jsonify(error="This platform search could not finish. Please try again."), 500
+    warnings = copy.deepcopy(counts.warnings)
+    if len(jobs) > 100:
+        label = next(label for key, label, _ in SOURCES if key == enabled[0])
+        warnings.setdefault(label, []).append(f"Showing 100 of {len(jobs)} matches to fit free hosting response limits. Narrow your date range for more focused results.")
+    rows = []
+    size = 0
+    for job in jobs[:100]:
+        row = {key: str(value or "")[:2000] for key, value in job.to_row().items()}
+        size += len(json.dumps(row, ensure_ascii=False).encode("utf-8"))
+        if size > 240_000:
+            warnings.setdefault(job.source, []).append("Result text exceeded the free response size limit; narrow your search to retrieve more matches.")
+            break
+        rows.append(row)
+    return jsonify(jobs=rows, count=len(rows), fetched=dict(counts), source_statuses=counts.statuses,
+                   errors=counts.errors, warnings=warnings, elapsed_seconds=counts.elapsed_seconds)
+
+
+def _submitted_jobs(data):
+    if not isinstance(data, dict) or not isinstance(data.get("jobs"), list) or len(data["jobs"]) > 2000:
+        raise ValueError("Send up to 2000 job records.")
+    jobs = []
+    fields = JobListing.__dataclass_fields__
+    for row in data["jobs"]:
+        if not isinstance(row, dict) or any(key not in fields or not isinstance(value, str) or len(value) > 2000 for key, value in row.items()):
+            raise ValueError("Job fields must be strings of at most 2000 characters.")
+        try:
+            jobs.append(JobListing(**row))
+        except TypeError:
+            raise ValueError("A job record is missing required fields.") from None
+    return _dedupe(jobs)
+
+
+@app.route("/api/merge", methods=["POST", "OPTIONS"])
+def merge_results():
+    if request.method == "OPTIONS":
+        return "", 204
+    try:
+        jobs = _submitted_jobs(request.get_json(silent=True))
+    except ValueError as exc:
+        return jsonify(error=str(exc)), 400
+    return jsonify(jobs=[job.to_row() for job in jobs], count=len(jobs))
+
+
+@app.route("/api/export", methods=["POST", "OPTIONS"])
+def export_results():
+    import io
+    if request.method == "OPTIONS":
+        return "", 204
+    try:
+        jobs = _submitted_jobs(request.get_json(silent=True))
+    except ValueError as exc:
+        return jsonify(error=str(exc)), 400
+    try:
+        with tempfile.TemporaryDirectory(prefix="jobs-tool-") as directory:
+            config = {"output": {"directory": directory, "filename": "jobs.xlsx", "sheet_name": "Jobs"}}
+            content = export_excel(jobs, config).read_bytes()
+    except Exception:
+        log.exception("Stateless Excel export failed")
+        return jsonify(error="Excel export failed. Please try the download again."), 500
+    return send_file(io.BytesIO(content), as_attachment=True, download_name="job-finder-results.xlsx",
+                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
 def search_settings(data):
@@ -175,6 +263,8 @@ def start_search():
     global _active
     if request.method == "OPTIONS":
         return "", 204
+    if os.environ.get("VERCEL"):
+        return jsonify(error="Use /api/source on serverless hosting."), 400
     try:
         settings = search_settings(request.get_json(silent=True))
     except ValueError as exc:

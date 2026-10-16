@@ -115,3 +115,52 @@ def test_expired_results_and_downloads_are_removed(client):
     server._searches["expired"] = {"status": "complete", "created": time.monotonic() - 3601, "export": b"file"}
     assert client.get("/api/search/expired").status_code == 404
     assert client.get("/api/search/expired/excel").status_code == 404
+
+
+def test_stateless_source_returns_filtered_results_and_bounded_settings(client):
+    counts = SourceCounts()
+    counts.statuses = {"Remotive": "partial"}
+    counts["Remotive"] = 5
+    job = JobListing("Software Engineer", "Acme", "Worldwide", "Remote", "2026-10-12", "https://example.org/job", "Remotive")
+    with patch.object(server, "fetch_all", return_value=([job], counts)) as fetch:
+        response = client.post("/api/source", json=payload())
+    assert response.status_code == 200
+    assert response.json["jobs"][0]["company"] == "Acme"
+    settings = fetch.call_args.args[0]
+    assert settings["sources"]["linkedin"]["max_pages"] == 1
+    assert settings["sources"]["hackernews"]["max_comments"] == 30
+    assert not server._searches
+    assert client.post("/api/source", json=payload(sources=["remotive", "linkedin"])).status_code == 400
+
+
+def test_stateless_merge_and_export_keep_the_same_unique_jobs(client):
+    import io
+    from openpyxl import load_workbook
+    first = JobListing("Software Engineer", "Acme", "Worldwide", "Remote", "2026-10-12", "https://example.org/remote", "Remotive")
+    second = JobListing("Software Engineer", "Acme", "Worldwide", "Remote", "2026-10-12", "https://example.org/linkedin", "LinkedIn")
+    rows = [first.to_row(), second.to_row()]
+    merged = client.post("/api/merge", json={"jobs": rows})
+    assert merged.status_code == 200
+    assert merged.json["count"] == 1
+    assert merged.json["jobs"][0]["source"] == "LinkedIn"
+    exported = client.post("/api/export", json={"jobs": rows})
+    assert exported.status_code == 200
+    workbook = load_workbook(io.BytesIO(exported.data), read_only=True)
+    try:
+        assert workbook["Jobs"].max_row == 2
+        assert workbook["Jobs"]["F2"].value == "LinkedIn"
+    finally:
+        workbook.close()
+    assert not server._searches
+
+
+@pytest.mark.parametrize("rows", [[{}], [{"title": 123}], ["invalid"], [{"unexpected": "field"}]])
+def test_stateless_export_rejects_invalid_job_records(client, rows):
+    assert client.post("/api/merge", json={"jobs": rows}).status_code == 400
+    assert client.post("/api/export", json={"jobs": rows}).status_code == 400
+
+
+def test_serverless_mode_does_not_start_background_threads(client, monkeypatch):
+    monkeypatch.setenv("VERCEL", "1")
+    assert client.post("/api/search", json=payload()).status_code == 400
+    assert not server._active

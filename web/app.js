@@ -7,10 +7,11 @@ import('https://www.gstatic.com/firebasejs/12.4.0/firebase-app.js')
 
 const $ = id => document.getElementById(id);
 const base = API_BASE_URL.replace(/\/$/, '');
-let currentId = null;
 let currentJobs = [];
 let visible = 0;
 let busy = false;
+let downloading = false;
+let sourceNames = new Map();
 const localDate = date => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 const today = new Date();
 $('end-date').value = localDate(today);
@@ -25,7 +26,7 @@ function node(tag, text, className) {
 }
 
 async function api(path, options = {}) {
-  const response = await fetch(`${base}${path}`, { ...options, signal: AbortSignal.timeout(90000) });
+  const response = await fetch(`${base}${path}`, { ...options, signal: AbortSignal.timeout(310000) });
   const data = await response.json().catch(() => ({ error: 'The server is starting up. Please try again in a minute.' }));
   if (!response.ok) throw new Error(data.error || `Server returned ${response.status}. Please try again.`);
   return data;
@@ -43,6 +44,7 @@ async function connect() {
   }
   try {
     const config = await api('/api/config');
+    sourceNames = new Map(config.sources.map(source => [source.key, source.label]));
     $('country').replaceChildren(...config.countries.map(country => {
       const option = node('option', country); option.value = country; return option;
     }));
@@ -55,7 +57,7 @@ async function connect() {
       return label;
     }));
     $('search-button').disabled = false;
-    $('connection').textContent = 'Search server ready. Results and downloads are kept for up to one hour.';
+    $('connection').textContent = 'Search server ready. Keep this page open to view and download your results.';
   } catch (error) {
     $('connection').replaceChildren(document.createTextNode(`${error.message} `));
     const retry = node('button', 'Retry connection', 'text-button'); retry.type = 'button';
@@ -93,7 +95,7 @@ function renderMore() {
     if (job.salary) card.append(node('p', job.salary, 'job-salary'));
     if (job.description) {
       const details = node('details');
-      details.append(node('summary', 'Read description'), node('p', job.description.replace(/<[^>]*>/g, ' ')));
+      details.append(node('summary', 'Read description excerpt'), node('p', job.description.replace(/<[^>]*>/g, ' ')));
       card.append(details);
     }
     return card;
@@ -115,7 +117,7 @@ function complete(data) {
     $('results').append(empty);
   }
   $('download').hidden = !data.download_available;
-  $('download').href = `${base}/api/search/${currentId}/excel`;
+  $('download').href = '#download';
   const warnings = Object.entries(data.warnings || {}).flatMap(([source, items]) => items.map(message => `${source}: ${message}`));
   const errors = Object.entries(data.errors || {}).map(([source, message]) => `${source}: ${message}`);
   $('coverage').hidden = false;
@@ -124,24 +126,59 @@ function complete(data) {
   status(allFailed ? 'The selected platforms could not be reached. See platform issues below and try again later.' : data.export_error || `Search finished in ${data.elapsed_seconds.toFixed(1)} seconds.${errors.length ? ` ${errors.length} platforms could not be reached.` : ''}`, allFailed || Boolean(data.export_error));
 }
 
-async function poll(id) {
-  // Briefly retry a dropped connection without starting duplicate searches.
-  let failures = 0;
-  for (;;) {
-    let data;
-    try { data = await api(`/api/search/${id}`); failures = 0; }
-    catch (error) {
-      if (++failures >= 3) throw error;
-      status('Connection interrupted. Reconnecting to your search…');
-      await new Promise(resolve => setTimeout(resolve, 4000)); continue;
+async function searchPlatforms(search) {
+  const started = performance.now();
+  const parts = new Array(search.sources.length);
+  const events = [];
+  const warnings = {}, errors = {}, statuses = {};
+  let next = 0;
+  async function worker() {
+    while (next < search.sources.length) {
+      const index = next++;
+      const key = search.sources[index];
+      let label = sourceNames.get(key) || key;
+      try {
+        const result = await api('/api/source', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...search, sources: [key] }) });
+        parts[index] = result.jobs;
+        const active = Object.entries(result.source_statuses).find(([, value]) => value !== 'disabled');
+        if (active) { label = active[0]; statuses[label] = active[1]; }
+        Object.assign(warnings, result.warnings); Object.assign(errors, result.errors);
+        events.push({ source: label, count: Object.values(result.fetched).reduce((sum, value) => sum + value, 0), status: active?.[1] || 'ok' });
+      } catch (error) {
+        parts[index] = []; errors[label] = error.message; statuses[label] = 'failed';
+        events.push({ source: label, count: 0, status: 'failed' });
+      }
+      renderProgress(events);
+      status(`Searching platforms… ${events.length} of ${search.sources.length} finished.`);
     }
-    renderProgress(data.progress || []);
-    if (data.status === 'failed') throw new Error(data.error);
-    if (data.status === 'complete') { complete(data); return; }
-    status(`Searching platforms… ${(data.progress || []).length} finished. You can keep this page open while the remaining platforms respond.`);
-    await new Promise(resolve => setTimeout(resolve, 2000));
   }
+  await Promise.all(Array.from({ length: Math.min(3, search.sources.length) }, worker));
+  const raw = parts.flat();
+  status('Combining matches and removing duplicates…');
+  const merged = raw.length ? await api('/api/merge', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ jobs: raw }) }) : { jobs: [], count: 0 };
+  complete({ ...merged, download_available: merged.count > 0, warnings, errors, source_statuses: statuses,
+    elapsed_seconds: (performance.now() - started) / 1000,
+    coverage: 'Free hosting checks up to 1 LinkedIn page per query, 2 Himalayas/public pages, and 30 comments in one HN thread. Each platform returns up to 100 matches with description excerpts; original listings contain the full details.' });
 }
+
+$('download').addEventListener('click', async event => {
+  event.preventDefault();
+  if (downloading || !currentJobs.length) return;
+  downloading = true; $('download').textContent = 'Preparing Excel…';
+  try {
+    const response = await fetch(`${base}/api/export`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jobs: currentJobs }), signal: AbortSignal.timeout(90000) });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.error || 'Excel export failed. Please try again.');
+    }
+    const url = URL.createObjectURL(await response.blob());
+    const link = node('a'); link.href = url; link.download = 'job-finder-results.xlsx';
+    document.body.append(link); link.click(); link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  } catch (error) { status(error.message, true); }
+  finally { downloading = false; $('download').textContent = 'Download Excel ↓'; }
+});
 
 $('search-form').addEventListener('submit', async event => {
   event.preventDefault();
@@ -154,14 +191,12 @@ $('search-form').addEventListener('submit', async event => {
   $('results').replaceChildren(); $('progress').replaceChildren();
   $('result-count').textContent = 'Finding your next move…'; status('Starting your search…');
   try {
-    const search = await api('/api/search', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+    await searchPlatforms({
       role: $('role').value.trim(), country: $('country').value,
       start_date: $('start-date').value, end_date: $('end-date').value,
       remote_only: $('remote-only').checked, exclude_pakistan: $('exclude-pakistan').checked,
       include_undated: $('include-undated').checked, sources: selected
-    }) });
-    currentId = search.id;
-    await poll(currentId);
+    });
   } catch (error) { status(error.message, true); $('result-count').textContent = 'Search could not finish'; }
   finally { busy = false; $('search-button').disabled = false; $('search-button').replaceChildren(document.createTextNode('Search jobs '), node('span', '↗')); }
 });

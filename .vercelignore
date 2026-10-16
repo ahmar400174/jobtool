@@ -1,0 +1,8 @@
+.venv
+output
+.pytest_cache
+**/__pycache__
+*.bat
+scripts/tests
+.firebase
+*-debug.log
