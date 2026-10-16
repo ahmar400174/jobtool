@@ -1,7 +1,8 @@
-"""HTTP interface for the existing search engine; one process on the free plan.
+"""HTTP interface for the existing search engine.
 
-Searches run outside request threads so polling survives long source queries.
-Results are temporary, unguessable, and isolated from desktop output files.
+The web UI uses stateless platform requests, merge, and export for serverless
+hosting. Legacy background searches are available only on local/Docker hosts.
+Excel writes always use an isolated temporary directory.
 """
 from __future__ import annotations
 

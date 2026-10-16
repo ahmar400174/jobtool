@@ -1,5 +1,9 @@
 # Job Finder
 
+The browser version uses Firebase Hosting and a Python backend on Vercel Hobby.
+See [DEPLOYMENT.md](DEPLOYMENT.md) for setup, free-hosting limits, and local web
+development. The desktop application below remains available.
+
 Run `setup.bat` once, then `start.bat` to open the desktop app. Choose a role,
 country, date range and sources, then search. Matches are deduplicated and
 exported to Excel. `fetch_jobs.bat` runs the same search from the saved YAML.
