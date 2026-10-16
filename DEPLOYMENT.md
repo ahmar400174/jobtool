@@ -1,4 +1,4 @@
-# Firebase website + free Render Python server
+# Firebase website + free Python server
 
 The desktop application still works. The web application reuses its Python
 search/filter/export code through `scripts/web_server.py`.
@@ -12,7 +12,28 @@ search/filter/export code through `scripts/web_server.py`.
 
 Open http://127.0.0.1:8765. The UI uses the local API automatically.
 
-## Deploy the Python server (Render Free)
+## Deploy with no card (Back4app Containers Free)
+
+The repository contains a production `Dockerfile`. Create a container app on
+Back4app, connect `ahmar400174/jobtool`, select branch `main`, and choose **Free**.
+The free plan includes 0.25 CPU, 256 MB RAM, and 100 GB transfer, with no credit
+card required according to its current published pricing:
+https://www.back4app.com/pricing/container-as-a-service.
+
+Use port **7860**, the repository root as the build context, and `Dockerfile`.
+Set `ALLOWED_ORIGINS` to
+`https://jobs-tool.web.app,https://jobs-tool.firebaseapp.com`.
+After deployment, verify `/api/health` on the assigned HTTPS URL, then put that
+exact URL into the production branch of `API_BASE_URL` in `web/config.js`.
+
+The production API URL is deliberately blank until a backend exists. This keeps
+the UI from sending requests to an unverified or unowned server domain.
+
+## Alternative: Render Free
+
+Render requested card verification in this account even with the Free instance
+selected. The service was not created. If you complete that verification yourself,
+the following configuration is ready to deploy without selecting a paid plan.
 
 Push the project to GitHub, then create a Render Web Service from that repository.
 Use the settings in `render.yaml`, or import it as a Render Blueprint:

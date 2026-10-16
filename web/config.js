@@ -1,7 +1,7 @@
-// Set this to the URL printed by Render after the backend deployment.
+// Set this to the exact HTTPS URL returned by the backend host after deployment.
 export const API_BASE_URL = location.hostname === "localhost" || location.hostname === "127.0.0.1"
   ? location.origin
-  : "https://jobs-tool-api.onrender.com";
+  : "";
 
 export const firebaseConfig = {
   apiKey: "AIzaSyDq2LUe4BjH2Yr15M7NQnX36u5K0a-KtGw",

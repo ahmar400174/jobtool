@@ -1,0 +1,11 @@
+.git
+.venv
+.pytest_cache
+output
+**/__pycache__
+**/*.pyc
+node_modules
+.firebase
+*-debug.log
+.env*
+scripts/tests

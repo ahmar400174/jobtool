@@ -37,6 +37,10 @@ function status(message, error = false) {
 }
 
 async function connect() {
+  if (!base) {
+    $('connection').textContent = 'The search server has not been deployed yet. Please finish server setup before searching.';
+    return;
+  }
   try {
     const config = await api('/api/config');
     $('country').replaceChildren(...config.countries.map(country => {
