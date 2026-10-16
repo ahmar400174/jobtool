@@ -1,0 +1,86 @@
+output:
+  directory: output
+  filename: qa_jobs_remote_no_pakistan.xlsx
+  sheet_name: Remote QA Jobs
+search:
+  end_date: '2026-10-15'
+  exclude_pakistan: true
+  include_hybrid: false
+  keywords:
+  - software engineering
+  location: Worldwide
+  profession_terms:
+  - software engineering
+  - software
+  - engineering
+  - qa engineer
+  - quality assurance
+  - sdet
+  - test engineer
+  - automation engineer
+  - software engineer in test
+  - qa automation
+  - manual tester
+  - selenium
+  - playwright
+  - cypress
+  qa_terms:
+  - qa
+  - quality assurance
+  - quality engineer
+  - sdet
+  - test engineer
+  - automation engineer
+  - software engineer in test
+  - qa automation
+  - manual tester
+  - selenium
+  - playwright
+  - cypress
+  remote_only: true
+  start_date: '2026-10-11'
+  us_company_only: false
+sources:
+  jobicy:
+    count: 200
+    enabled: true
+    geo: ''
+    tags:
+    - software engineering
+  linkedin:
+    delay_seconds: 2.0
+    detail_delay_seconds: 1.5
+    detail_workers: 4
+    enabled: true
+    fetch_details: true
+    max_pages: 15
+    max_retries: 2
+    retry_backoff_seconds: 5
+    max_retry_wait_seconds: 60
+  remoteok:
+    enabled: true
+  remotive:
+    enabled: true
+  ycombinator:
+    enabled: true
+  wellfound:
+    enabled: true
+  startupjobs:
+    enabled: true
+  hackernews:
+    enabled: true
+    months: 2
+    max_comments: 300
+  wellfound_remote:
+    enabled: true
+  himalayas:
+    enabled: true
+    max_pages: 3
+  weworkremotely:
+    enabled: true
+  aijobs:
+    enabled: true
+  arc:
+    enabled: true
+performance:
+  source_workers: 8

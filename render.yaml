@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: jobs-tool-api
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements-web.txt
+    startCommand: gunicorn --chdir scripts web_server:app --bind 0.0.0.0:$PORT --workers 1 --threads 8 --timeout 120
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.5
+      - key: ALLOWED_ORIGINS
+        value: https://jobs-tool.web.app,https://jobs-tool.firebaseapp.com

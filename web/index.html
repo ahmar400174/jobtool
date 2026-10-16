@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0c1220">
+  <meta name="description" content="Search 13 job platforms in one place. Find remote opportunities, compare results, and download your shortlist to Excel.">
+  <title>Job Finder — Your next move</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='8' fill='%231ec8a5'/%3E%3Cpath d='M12 12h17v17M28 13 11 30' fill='none' stroke='%230c1220' stroke-width='4'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/styles.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#search-form">Skip to search</a>
+  <header class="topbar"><a class="brand" href="/" aria-label="Job Finder home"><span class="brand-mark" aria-hidden="true">↗</span> Job Finder</a><span class="topnote">One search. More possibilities.</span></header>
+  <main>
+    <section class="intro" aria-labelledby="title"><p class="eyebrow">YOUR NEXT MOVE</p><h1 id="title">Good opportunities.<br><span>Less searching.</span></h1><p class="intro-copy">Bring 13 job platforms together. Find the roles that fit, then take your shortlist with you.</p></section>
+    <div class="workspace">
+      <section class="search-panel" aria-labelledby="search-heading">
+        <div class="panel-heading"><h2 id="search-heading">Set your direction</h2><span class="step">01 / SEARCH</span></div>
+        <form id="search-form">
+          <label for="role">Profession or role</label><input id="role" name="role" type="text" value="Software Engineer" minlength="2" maxlength="120" required autocomplete="off" placeholder="e.g. QA Engineer, React Developer">
+          <label for="country">Country / region</label><select id="country" name="country" disabled><option>Worldwide</option></select>
+          <p class="field-note">Country narrows supported platform queries; other feeds can include roles restricted to other countries.</p>
+          <div class="date-grid"><div><label for="start-date">Posted from</label><input id="start-date" name="start_date" type="date" required></div><div><label for="end-date">Posted through</label><input id="end-date" name="end_date" type="date" required></div></div>
+          <fieldset class="preferences"><legend>Preferences</legend><label class="check"><input id="remote-only" type="checkbox" checked> Remote only</label><label class="check"><input id="exclude-pakistan" type="checkbox" checked> Exclude Pakistan-only roles</label><label class="check"><input id="include-undated" type="checkbox"> Include listings without a posted date</label></fieldset>
+          <fieldset class="platforms"><legend>Search platforms</legend><button id="select-all" class="text-button" type="button">Select all</button><div id="sources" class="source-grid"><p class="muted">Loading platforms…</p></div></fieldset>
+          <button id="search-button" class="primary" type="submit" disabled>Search jobs <span aria-hidden="true">↗</span></button>
+          <p class="server-note" id="connection" role="status">Connecting to the free search server. Its first start can take a minute.</p>
+        </form>
+      </section>
+      <section class="results-panel" aria-labelledby="results-heading">
+        <div class="panel-heading"><h2 id="results-heading">Your opportunities</h2><span class="step">02 / EXPLORE</span></div>
+        <div class="results-toolbar"><p id="result-count">Ready when you are</p><a id="download" class="download" hidden>Download Excel ↓</a></div>
+        <div id="search-status" role="status" aria-live="polite"></div>
+        <div id="progress" class="progress-list" aria-label="Platform progress"></div>
+        <details id="coverage" hidden><summary>Platform coverage and issues</summary><div id="coverage-content"></div></details>
+        <div id="results"><div class="empty"><span class="empty-symbol" aria-hidden="true">↗</span><h3>A fresh start, in one search.</h3><p>Choose your role, dates, and platforms.<br>Your matching jobs will appear here.</p><div class="empty-rule"></div><p class="small">Real listings · Duplicate removal · Excel export</p></div></div>
+        <button id="load-more" class="secondary" type="button" hidden>Show more jobs</button>
+      </section>
+    </div>
+    <footer><span>Built for your next chapter.</span><span>Public listings · Check each role’s location requirements.</span></footer>
+  </main>
+</body>
+</html>
