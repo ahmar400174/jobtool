@@ -37,6 +37,13 @@ requests in parallel. Each request finishes its work before responding.
 `/api/merge` removes cross-platform duplicates with the original source priority.
 `/api/export` returns a verified Excel workbook from the displayed records.
 Results stay in the browser until the page closes or another search starts.
+LinkedIn also keeps the most recent matching search in browser local storage:
+it is reused for 10 minutes to reduce repeated requests. If a live request fails,
+the same search's results can be shown for up to 24 hours, with their original
+fetch time and the failure displayed. Changed filters require a new search.
+The API keeps a bounded cache and prevents concurrent LinkedIn fetches within
+each Python process; these safeguards are not shared across Vercel instances.
+The browser cache continues working across serverless cold starts.
 The legacy background-search API is disabled on Vercel.
 
 ## Deploy the frontend
@@ -55,6 +62,7 @@ The production API URL is configured as `https://jobtool1.vercel.app`.
 .\.venv\Scripts\python.exe -m pytest scripts/tests -q
 node --check web/app.js
 node --check web/config.js
+node --test scripts/tests/test_linkedin_browser_cache.mjs
 ```
 
 Live checks include a platform search, result links, coverage warnings, and
@@ -64,6 +72,14 @@ Verified on 2026-10-16: 106 offline tests passed. A browser search across all
 13 platforms returned 130 unique jobs in 17.6 seconds; 12 platforms completed
 and LinkedIn was blocked. The Excel file downloaded from the Firebase page
 opened successfully with all 130 job rows. The API health check also passed.
+
+On 2026-10-19 the production API successfully fetched 10 LinkedIn cards and
+returned one job matching the date and remote filters in 14.4 seconds. The
+earlier HTTP 429 was temporary; public access can still be rate-limited.
+Caching reduces repeat requests but does not grant access when LinkedIn blocks
+a cloud IP. The UI includes a direct LinkedIn search link when results are cached
+or unavailable. LinkedIn identity/sign-in tokens do not grant job-search access.
+The cache update passed 118 Python tests and five browser-cache unit tests.
 
 For free hosting, each platform returns up to 100 matches and 240 KB of text.
 Descriptions are excerpts of up to 2000 characters; original listings are linked.

@@ -1,4 +1,5 @@
 import { API_BASE_URL, firebaseConfig } from './config.js';
+import { FRESH_MS, readLinkedInCache, saveLinkedInCache, cachedLinkedInResult } from './linkedin-cache.js';
 
 // Firebase initialization is independent from search availability.
 import('https://www.gstatic.com/firebasejs/12.4.0/firebase-app.js')
@@ -28,7 +29,11 @@ function node(tag, text, className) {
 async function api(path, options = {}) {
   const response = await fetch(`${base}${path}`, { ...options, signal: AbortSignal.timeout(310000) });
   const data = await response.json().catch(() => ({ error: 'The server is starting up. Please try again in a minute.' }));
-  if (!response.ok) throw new Error(data.error || `Server returned ${response.status}. Please try again.`);
+  if (!response.ok) {
+    const error = new Error(data.error || `Server returned ${response.status}. Please try again.`);
+    error.retryAfter = Number(data.retry_after_seconds || response.headers.get('Retry-After')) || 0;
+    throw error;
+  }
   return data;
 }
 
@@ -122,8 +127,16 @@ function complete(data) {
   const errors = Object.entries(data.errors || {}).map(([source, message]) => `${source}: ${message}`);
   $('coverage').hidden = false;
   $('coverage-content').replaceChildren(...[data.coverage, ...errors, ...warnings].map(message => node('p', message)));
+  if (data.linkedin_search_url && (data.errors?.LinkedIn || data.linkedin_cached)) {
+    const link = node('a', 'Open this search on LinkedIn');
+    link.href = data.linkedin_search_url; link.target = '_blank'; link.rel = 'noopener noreferrer';
+    $('coverage-content').append(link);
+  }
   const allFailed = Object.values(data.source_statuses).filter(value => value !== 'disabled').every(value => value === 'failed');
-  status(allFailed ? 'The selected platforms could not be reached. See platform issues below and try again later.' : data.export_error || `Search finished in ${data.elapsed_seconds.toFixed(1)} seconds.${errors.length ? ` ${errors.length} ${errors.length === 1 ? 'platform' : 'platforms'} could not be reached.` : ''}`, allFailed || Boolean(data.export_error));
+  status(allFailed ? 'The selected platforms could not be reached. See platform issues below and try again later.' : data.export_error || `Search finished in ${data.elapsed_seconds.toFixed(1)} seconds.${errors.length ? ` ${errors.length} ${errors.length === 1 ? 'platform' : 'platforms'} could not be reached.` : ''}${data.linkedin_cached ? ' Recent LinkedIn results were reused; their fetch time is shown in platform coverage.' : ''}`, allFailed || Boolean(data.export_error));
+  if (data.linkedin_retry_after > 0) {
+    status(`LinkedIn is temporarily unavailable. Retry after ${data.linkedin_retry_after} seconds.${data.linkedin_cached ? ' Recent LinkedIn results are included; their fetch time is shown in platform coverage.' : ''}${data.count ? ' Available results are shown below.' : ''}`, allFailed);
+  }
 }
 
 async function searchPlatforms(search) {
@@ -131,22 +144,51 @@ async function searchPlatforms(search) {
   const parts = new Array(search.sources.length);
   const events = [];
   const warnings = {}, errors = {}, statuses = {};
+  let linkedinCached = false, linkedinRetryAfter = 0;
   let next = 0;
   async function worker() {
     while (next < search.sources.length) {
       const index = next++;
       const key = search.sources[index];
       let label = sourceNames.get(key) || key;
+      const cached = key === 'linkedin' ? readLinkedInCache(search) : null;
       try {
-        const result = await api('/api/source', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...search, sources: [key] }) });
+        let result;
+        if (cached && cached.age < FRESH_MS) {
+          result = cachedLinkedInResult(cached, 'Reused a recent search to reduce repeated LinkedIn requests.');
+        } else {
+          result = await api('/api/source', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...search, sources: [key] }) });
+          if (key === 'linkedin') {
+            if (cached && (result.errors.LinkedIn || result.retry_after_seconds) && !result.jobs.length) {
+              const failure = result;
+              result = cachedLinkedInResult(cached, 'LinkedIn could not complete the live request.');
+              if (failure.errors.LinkedIn) result.errors.LinkedIn = failure.errors.LinkedIn;
+              result.warnings.LinkedIn.push(...(failure.warnings.LinkedIn || []));
+              result.retry_after_seconds = failure.retry_after_seconds;
+            } else saveLinkedInCache(search, result);
+          }
+        }
+        if (key === 'linkedin') {
+          linkedinCached = Boolean(result.cache_info?.cached);
+          linkedinRetryAfter = result.retry_after_seconds || 0;
+        }
         parts[index] = result.jobs;
         const active = Object.entries(result.source_statuses).find(([, value]) => value !== 'disabled');
         if (active) { label = active[0]; statuses[label] = active[1]; }
         Object.assign(warnings, result.warnings); Object.assign(errors, result.errors);
         events.push({ source: label, count: Object.values(result.fetched).reduce((sum, value) => sum + value, 0), status: active?.[1] || 'ok' });
       } catch (error) {
-        parts[index] = []; errors[label] = error.message; statuses[label] = 'failed';
-        events.push({ source: label, count: 0, status: 'failed' });
+        if (cached) {
+          const result = cachedLinkedInResult(cached, 'LinkedIn could not complete the live request.');
+          parts[index] = result.jobs; Object.assign(warnings, result.warnings);
+          statuses[label] = 'partial'; linkedinCached = true;
+          events.push({ source: label, count: result.jobs.length, status: 'partial' });
+        } else {
+          parts[index] = []; statuses[label] = 'failed';
+          events.push({ source: label, count: 0, status: 'failed' });
+        }
+        errors[label] = error.message;
+        if (key === 'linkedin') linkedinRetryAfter = error.retryAfter || 0;
       }
       renderProgress(events);
       status(`Searching platforms… ${events.length} of ${search.sources.length} finished.`);
@@ -156,7 +198,15 @@ async function searchPlatforms(search) {
   const raw = parts.flat();
   status('Combining matches and removing duplicates…');
   const merged = raw.length ? await api('/api/merge', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ jobs: raw }) }) : { jobs: [], count: 0 };
+  const linkedinSearch = new URL('https://www.linkedin.com/jobs/search/');
+  linkedinSearch.searchParams.set('keywords', search.role);
+  if (search.country !== 'Worldwide') linkedinSearch.searchParams.set('location', search.country);
+  if (search.remote_only) linkedinSearch.searchParams.set('f_WT', '2');
+  linkedinSearch.searchParams.set('sortBy', 'DD');
+  const days = Math.max(1, Math.ceil((Date.now() - Date.parse(search.start_date)) / 86400000) + 1);
+  linkedinSearch.searchParams.set('f_TPR', `r${days * 86400}`);
   complete({ ...merged, download_available: merged.count > 0, warnings, errors, source_statuses: statuses,
+    linkedin_search_url: linkedinSearch.href, linkedin_cached: linkedinCached, linkedin_retry_after: linkedinRetryAfter,
     elapsed_seconds: (performance.now() - started) / 1000,
     coverage: 'Free hosting checks up to 1 LinkedIn page per query, 2 Himalayas/public pages, and 30 comments in one HN thread. Each platform returns up to 100 matches with description excerpts; original listings contain the full details.' });
 }

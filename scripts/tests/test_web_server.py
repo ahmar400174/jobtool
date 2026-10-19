@@ -16,6 +16,7 @@ from job_finder.models import JobListing
 @pytest.fixture
 def client():
     server.app.config["TESTING"] = True
+    server.linkedin_results.clear()
     with server._lock:
         server._searches.clear()
         server._active = False
@@ -164,3 +165,31 @@ def test_serverless_mode_does_not_start_background_threads(client, monkeypatch):
     monkeypatch.setenv("VERCEL", "1")
     assert client.post("/api/search", json=payload()).status_code == 400
     assert not server._active
+
+
+def test_linkedin_endpoint_reuses_successful_search(client):
+    counts = SourceCounts()
+    counts.statuses = {"LinkedIn": "ok"}
+    counts["LinkedIn"] = 1
+    job = JobListing("Software Engineer", "Acme", "Worldwide", "Remote", "2026-10-12", "https://www.linkedin.com/jobs/view/123456789", "LinkedIn")
+    with patch.object(server, "fetch_all", return_value=([job], counts)) as fetch:
+        first = client.post("/api/source", json=payload(sources=["linkedin"]))
+        second = client.post("/api/source", json=payload(sources=["linkedin"]))
+    assert first.status_code == second.status_code == 200
+    assert not first.json["cache_info"]["cached"]
+    assert second.json["cache_info"]["cached"]
+    assert second.json["jobs"] == first.json["jobs"]
+    fetch.assert_called_once()
+
+
+def test_linkedin_endpoint_reports_in_flight_request(client):
+    assert server.linkedin_results.request_lock.acquire(blocking=False)
+    try:
+        with patch.object(server, "fetch_all") as fetch:
+            response = client.post("/api/source", json=payload(sources=["linkedin"]))
+        assert response.status_code == 429
+        assert response.headers["Retry-After"] == "10"
+        assert response.json["retry_after_seconds"] == 10
+        fetch.assert_not_called()
+    finally:
+        server.linkedin_results.request_lock.release()

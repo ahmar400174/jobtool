@@ -23,6 +23,7 @@ from job_finder.config import load_settings, project_root
 from job_finder.countries import COUNTRIES, normalize_country
 from job_finder.export import export_excel
 from job_finder.models import JobListing
+from job_finder.linkedin_cache import LinkedInResultCache, LinkedInSearchBusy
 from job_finder.source_catalog import SOURCES
 
 app = Flask(__name__, static_folder=str(project_root() / "web"), static_url_path="")
@@ -36,6 +37,7 @@ _searches: dict[str, dict] = {}
 _active = False
 TTL_SECONDS = 3600
 MAX_RESULTS = 20
+linkedin_results = LinkedInResultCache()
 
 
 @app.before_request
@@ -97,13 +99,23 @@ def source_search():
     except ValueError as exc:
         return jsonify(error=str(exc)), 400
     try:
-        jobs, counts = fetch_all(settings)
+        if enabled[0] == "linkedin":
+            payload = linkedin_results.run(settings, lambda: source_payload(settings, enabled[0]))
+        else:
+            payload = source_payload(settings, enabled[0])
+        return jsonify(payload)
+    except LinkedInSearchBusy as exc:
+        return jsonify(error=str(exc), retry_after_seconds=10), 429, {"Retry-After": "10"}
     except Exception:
         log.exception("Platform search failed")
         return jsonify(error="This platform search could not finish. Please try again."), 500
+
+
+def source_payload(settings, source_key):
+    jobs, counts = fetch_all(settings)
     warnings = copy.deepcopy(counts.warnings)
     if len(jobs) > 100:
-        label = next(label for key, label, _ in SOURCES if key == enabled[0])
+        label = next(label for key, label, _ in SOURCES if key == source_key)
         warnings.setdefault(label, []).append(f"Showing 100 of {len(jobs)} matches to fit free hosting response limits. Narrow your date range for more focused results.")
     rows = []
     size = 0
@@ -114,8 +126,8 @@ def source_search():
             warnings.setdefault(job.source, []).append("Result text exceeded the free response size limit; narrow your search to retrieve more matches.")
             break
         rows.append(row)
-    return jsonify(jobs=rows, count=len(rows), fetched=dict(counts), source_statuses=counts.statuses,
-                   errors=counts.errors, warnings=warnings, elapsed_seconds=counts.elapsed_seconds)
+    return dict(jobs=rows, count=len(rows), fetched=dict(counts), source_statuses=counts.statuses,
+                errors=counts.errors, warnings=warnings, elapsed_seconds=counts.elapsed_seconds)
 
 
 def _submitted_jobs(data):
