@@ -5,7 +5,8 @@ export const MAX_AGE_MS = 24 * 60 * 60 * 1000;
 function searchKey(search) {
   return JSON.stringify({ role: search.role.trim().toLowerCase().replace(/\s+/g, ' '), country: search.country,
     start_date: search.start_date, end_date: search.end_date, remote_only: search.remote_only,
-    exclude_pakistan: search.exclude_pakistan, include_undated: search.include_undated });
+    exclude_pakistan: search.exclude_pakistan, include_undated: search.include_undated,
+    connection: search.linkedin_connection || 'cloud' });
 }
 
 const object = value => value && typeof value === 'object' && !Array.isArray(value);

@@ -40,8 +40,17 @@ MAX_RESULTS = 20
 linkedin_results = LinkedInResultCache()
 
 
+def connector_mode():
+    return os.environ.get("JOB_FINDER_CONNECTOR") == "1" and not os.environ.get("VERCEL")
+
+
 @app.before_request
 def check_origin():
+    if connector_mode():
+        if request.host not in {"127.0.0.1:8765", "localhost:8765"}:
+            return jsonify(error="The connector accepts loopback requests only."), 403
+        if request.path not in {"/api/health", "/api/source"}:
+            return jsonify(error="This connector only supports LinkedIn searches."), 404
     origin = request.headers.get("Origin")
     if origin and origin not in ORIGINS:
         return jsonify(error="This website is not allowed to use this server."), 403
@@ -54,6 +63,8 @@ def response_headers(response):
         response.headers["Access-Control-Allow-Origin"] = origin
         response.headers["Access-Control-Allow-Headers"] = "Content-Type"
         response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+        if connector_mode() and request.headers.get("Access-Control-Request-Private-Network") == "true":
+            response.headers["Access-Control-Allow-Private-Network"] = "true"
         response.vary.add("Origin")
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Cache-Control"] = "no-store"
@@ -72,7 +83,7 @@ def index():
 
 @app.get("/api/health")
 def health():
-    return jsonify(status="ok", service="jobs-tool-api")
+    return jsonify(status="ok", service="jobs-tool-api", linkedin_connector=connector_mode())
 
 
 @app.get("/api/config")
@@ -93,6 +104,8 @@ def source_search():
         enabled = [key for key, cfg in settings["sources"].items() if cfg.get("enabled")]
         if len(enabled) != 1:
             raise ValueError("Choose exactly one platform per request.")
+        if connector_mode() and enabled != ["linkedin"]:
+            raise ValueError("The local connector only searches LinkedIn.")
         settings["sources"]["linkedin"]["max_pages"] = 1
         settings["sources"]["himalayas"]["max_pages"] = 2
         settings["sources"]["hackernews"].update(max_comments=30, months=1)

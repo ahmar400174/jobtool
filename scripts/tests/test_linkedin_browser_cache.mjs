@@ -14,7 +14,8 @@ test('reuse is restricted to matching filters, independent of other selected pla
   assert.ok(saveLinkedInCache(search, result(), now, store));
   assert.ok(readLinkedInCache({ ...search, sources: ['linkedin', 'remotive'] }, now, store));
   for (const changes of [{ role: 'Designer' }, { country: 'Canada' }, { start_date: '2026-10-18' },
-    { end_date: '2026-10-18' }, { remote_only: false }, { exclude_pakistan: false }, { include_undated: true }]) {
+    { end_date: '2026-10-18' }, { remote_only: false }, { exclude_pakistan: false }, { include_undated: true },
+    { linkedin_connection: 'local' }]) {
     assert.equal(readLinkedInCache({ ...search, ...changes }, now, store), null);
   }
 });

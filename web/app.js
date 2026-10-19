@@ -8,6 +8,7 @@ import('https://www.gstatic.com/firebasejs/12.4.0/firebase-app.js')
 
 const $ = id => document.getElementById(id);
 const base = API_BASE_URL.replace(/\/$/, '');
+const connectorBase = 'http://127.0.0.1:8765';
 let currentJobs = [];
 let visible = 0;
 let busy = false;
@@ -26,8 +27,14 @@ function node(tag, text, className) {
   return element;
 }
 
-async function api(path, options = {}) {
-  const response = await fetch(`${base}${path}`, { ...options, signal: AbortSignal.timeout(310000) });
+async function api(path, options = {}, target = base) {
+  let response;
+  try {
+    response = await fetch(`${target}${path}`, { ...options, signal: options.signal || AbortSignal.timeout(310000) });
+  } catch (error) {
+    if (target === connectorBase) throw new Error('The LinkedIn connector could not be reached. Start start_linkedin_connector.bat on this computer and allow the browser connection, then try again.');
+    throw error;
+  }
   const data = await response.json().catch(() => ({ error: 'The server is starting up. Please try again in a minute.' }));
   if (!response.ok) {
     const error = new Error(data.error || `Server returned ${response.status}. Please try again.`);
@@ -36,6 +43,24 @@ async function api(path, options = {}) {
   }
   return data;
 }
+
+try { $('local-linkedin').checked = localStorage.getItem('jobfinder.linkedin.connector') === '1'; } catch {}
+$('local-linkedin').addEventListener('change', () => {
+  try { localStorage.setItem('jobfinder.linkedin.connector', $('local-linkedin').checked ? '1' : '0'); } catch {}
+  $('connector-status').textContent = $('local-linkedin').checked ? 'LinkedIn will use this computer. Check the connector before searching.' : 'LinkedIn will use the online server.';
+});
+$('check-connector').addEventListener('click', async () => {
+  $('check-connector').disabled = true;
+  $('connector-status').textContent = 'Checking the connector on this computer…';
+  try {
+    const health = await api('/api/health', { signal: AbortSignal.timeout(8000) }, connectorBase);
+    if (!health.linkedin_connector) throw new Error('A different local server is running. Stop it and open start_linkedin_connector.bat.');
+    $('local-linkedin').checked = true;
+    try { localStorage.setItem('jobfinder.linkedin.connector', '1'); } catch {}
+    $('connector-status').textContent = 'Connected. LinkedIn will use this computer; keep the connector running.';
+  } catch (error) { $('connector-status').textContent = error.message; }
+  finally { $('check-connector').disabled = false; }
+});
 
 function status(message, error = false) {
   $('search-status').textContent = message;
@@ -141,6 +166,8 @@ function complete(data) {
 
 async function searchPlatforms(search) {
   const started = performance.now();
+  const localLinkedIn = $('local-linkedin').checked;
+  const cacheSearch = { ...search, linkedin_connection: localLinkedIn ? 'local' : 'cloud' };
   const parts = new Array(search.sources.length);
   const events = [];
   const warnings = {}, errors = {}, statuses = {};
@@ -151,21 +178,22 @@ async function searchPlatforms(search) {
       const index = next++;
       const key = search.sources[index];
       let label = sourceNames.get(key) || key;
-      const cached = key === 'linkedin' ? readLinkedInCache(search) : null;
+      const cached = key === 'linkedin' ? readLinkedInCache(cacheSearch) : null;
       try {
         let result;
         if (cached && cached.age < FRESH_MS) {
           result = cachedLinkedInResult(cached, 'Reused a recent search to reduce repeated LinkedIn requests.');
         } else {
-          result = await api('/api/source', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...search, sources: [key] }) });
+          result = await api('/api/source', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...search, sources: [key] }) }, key === 'linkedin' && localLinkedIn ? connectorBase : base);
           if (key === 'linkedin') {
+            if (localLinkedIn) result.warnings.LinkedIn = [...(result.warnings.LinkedIn || []), 'LinkedIn search ran through the connector on this computer.'];
             if (cached && (result.errors.LinkedIn || result.retry_after_seconds) && !result.jobs.length) {
               const failure = result;
               result = cachedLinkedInResult(cached, 'LinkedIn could not complete the live request.');
               if (failure.errors.LinkedIn) result.errors.LinkedIn = failure.errors.LinkedIn;
               result.warnings.LinkedIn.push(...(failure.warnings.LinkedIn || []));
               result.retry_after_seconds = failure.retry_after_seconds;
-            } else saveLinkedInCache(search, result);
+            } else saveLinkedInCache(cacheSearch, result);
           }
         }
         if (key === 'linkedin') {

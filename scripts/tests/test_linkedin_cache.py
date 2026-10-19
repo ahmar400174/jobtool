@@ -86,6 +86,19 @@ def test_detail_rate_limit_does_not_replace_saved_jobs_with_empty_filtered_resul
     assert any("Stopped description checks" in warning for warning in reused["warnings"]["LinkedIn"])
 
 
+def test_partial_verified_matches_survive_the_following_cooldown():
+    cache = LinkedInResultCache()
+    partial = result()
+    partial["source_statuses"]["LinkedIn"] = "partial"
+    partial["warnings"]["LinkedIn"] = ["HTTP 429: description checks stopped"]
+    first = cache.run(settings(), lambda: partial)
+    assert first["retry_after_seconds"] == 300
+    reused = cache.run(settings(), lambda: pytest.fail("Fetched during recent cache window"))
+    assert reused["jobs"] == first["jobs"]
+    assert reused["cache_info"]["cached"]
+    assert "retry_after_seconds" not in reused
+
+
 def test_concurrent_searches_are_rejected_or_use_the_matching_cache():
     now = [0]
     cache = LinkedInResultCache(clock=lambda: now[0])

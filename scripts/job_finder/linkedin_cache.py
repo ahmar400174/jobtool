@@ -53,6 +53,15 @@ class LinkedInResultCache:
         result["source_statuses"]["LinkedIn"] = "partial"
         return result
 
+    def _save(self, key, result):
+        fetched_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        result["cache_info"] = {"cached": False, "fetched_at": fetched_at, "age_seconds": 0}
+        with self.lock:
+            self.entries[key] = {"created": self.clock(), "fetched_at": fetched_at, "result": deepcopy(result)}
+            self.entries.move_to_end(key)
+            while len(self.entries) > 16:
+                self.entries.popitem(last=False)
+
     def run(self, settings, fetch):
         key = json.dumps({"search": settings["search"], "linkedin": settings["sources"]["linkedin"]}, sort_keys=True)
         cached = self._cached(key)
@@ -75,16 +84,12 @@ class LinkedInResultCache:
                     result["warnings"]["LinkedIn"].extend(live_warnings)
                     if error:
                         result.setdefault("errors", {})["LinkedIn"] = error
+                elif not error and result.get("jobs"):
+                    self._save(key, result)
                 result["retry_after_seconds"] = retry
                 return result
             if not error and result.get("source_statuses", {}).get("LinkedIn") in {"ok", "partial"}:
-                fetched_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
-                result["cache_info"] = {"cached": False, "fetched_at": fetched_at, "age_seconds": 0}
-                with self.lock:
-                    self.entries[key] = {"created": self.clock(), "fetched_at": fetched_at, "result": deepcopy(result)}
-                    self.entries.move_to_end(key)
-                    while len(self.entries) > 16:
-                        self.entries.popitem(last=False)
+                self._save(key, result)
             return result
         finally:
             self.request_lock.release()

@@ -193,3 +193,33 @@ def test_linkedin_endpoint_reports_in_flight_request(client):
         fetch.assert_not_called()
     finally:
         server.linkedin_results.request_lock.release()
+
+
+def test_local_connector_only_serves_linkedin_on_loopback(client, monkeypatch):
+    monkeypatch.setenv("JOB_FINDER_CONNECTOR", "1")
+    monkeypatch.delenv("VERCEL", raising=False)
+    local = {"base_url": "http://127.0.0.1:8765", "headers": {"Origin": "https://jobs-tool.web.app"}}
+    assert client.get("/api/health", **local).json["linkedin_connector"]
+    assert client.get("/api/config", **local).status_code == 404
+    assert client.get("/api/health", base_url="http://untrusted.test:8765").status_code == 403
+    assert client.get("/api/health", base_url="http://127.0.0.1:8765", headers={"Origin": "https://untrusted.test"}).status_code == 403
+    with patch.object(server, "fetch_all") as fetch:
+        assert client.post("/api/source", json=payload(), **local).status_code == 400
+        fetch.assert_not_called()
+    counts = SourceCounts()
+    counts.statuses = {"LinkedIn": "ok"}
+    with patch.object(server, "fetch_all", return_value=([], counts)):
+        assert client.post("/api/source", json=payload(sources=["linkedin"]), **local).status_code == 200
+
+
+def test_connector_private_network_preflight_is_limited_to_allowed_origins(client, monkeypatch):
+    monkeypatch.setenv("JOB_FINDER_CONNECTOR", "1")
+    monkeypatch.delenv("VERCEL", raising=False)
+    headers = {"Origin": "https://jobs-tool.web.app", "Access-Control-Request-Private-Network": "true"}
+    accepted = client.options("/api/source", base_url="http://127.0.0.1:8765", headers=headers)
+    assert accepted.status_code == 204
+    assert accepted.headers["Access-Control-Allow-Private-Network"] == "true"
+    headers["Origin"] = "https://untrusted.test"
+    denied = client.options("/api/source", base_url="http://127.0.0.1:8765", headers=headers)
+    assert denied.status_code == 403
+    assert "Access-Control-Allow-Private-Network" not in denied.headers

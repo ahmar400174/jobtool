@@ -13,6 +13,24 @@ persistent disk is required. The desktop app still works.
 
 Open http://127.0.0.1:8765. The UI uses the local API automatically.
 
+## Free local LinkedIn connector
+
+If LinkedIn blocks cloud requests, run `start_linkedin_connector.bat` on the
+same computer as the browser. On https://jobs-tool.web.app click **Check connector**
+under **LinkedIn connection**. A successful check enables **Use this computer for
+LinkedIn**. Allow the browser's local/loopback network permission if prompted.
+Keep the connector running and search normally; other platforms, merging and
+Excel export continue using Vercel. No LinkedIn secret, token or login is needed.
+Close the connector or press Ctrl+C to stop it. It must be restarted after reboot.
+
+The connector binds only `127.0.0.1:8765`, allows the Firebase origins, validates
+the Host header, and serves only health checks and LinkedIn source requests.
+It uses the same filters and limits as the cloud API. Caches distinguish cloud
+and local searches, so switching to local does not reuse an empty cloud result.
+An existing local web server on port 8765 must be stopped before starting it.
+Local requests can also be rate-limited by LinkedIn; this uses the user's
+connection and does not bypass LinkedIn's restrictions.
+
 ## Deploy the backend
 
 The deployed backend is https://jobtool1.vercel.app on **Vercel Hobby**.
@@ -79,7 +97,9 @@ earlier HTTP 429 was temporary; public access can still be rate-limited.
 Caching reduces repeat requests but does not grant access when LinkedIn blocks
 a cloud IP. The UI includes a direct LinkedIn search link when results are cached
 or unavailable. LinkedIn identity/sign-in tokens do not grant job-search access.
-The cache update passed 118 Python tests and five browser-cache unit tests.
+The cache and connector update passed 121 Python tests and five browser-cache unit tests.
+The connector fetched 10 LinkedIn cards and returned one matching remote job;
+subsequent description checks were rate-limited, and partial coverage was reported.
 
 For free hosting, each platform returns up to 100 matches and 240 KB of text.
 Descriptions are excerpts of up to 2000 characters; original listings are linked.
