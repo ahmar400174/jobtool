@@ -1,11 +1,23 @@
 """Canonical queries so profession labels also work as job title searches."""
+import re
+
+
+def normalise_role(role):
+    role = re.sub(r"[-\u2010-\u2015\u2212]", " ", role.lower())
+    role = re.sub(r"\bfull\s*stack\b", "full stack", role)
+    return " ".join(role.split())
+
+
+def is_full_stack_ai_role(role):
+    role = normalise_role(role)
+    return "full stack" in role and bool(re.search(r"\b(?:ai|artificial intelligence|genai|llm|ml)\b", role))
 
 
 def query_terms(keywords):
     result = []
     for role in keywords or ["QA Engineer"]:
-        normal = " ".join(role.lower().split())
-        variants = {
+        normal = normalise_role(role)
+        variants = ["full stack AI engineer", "full stack engineer", "AI engineer"] if is_full_stack_ai_role(role) else {
             "software engineering": ["software engineer", "software developer", "full stack developer"],
             "software development": ["software engineer", "software developer", "full stack developer"],
             "software": ["software engineer", "software developer", "full stack developer"],

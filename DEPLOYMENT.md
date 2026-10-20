@@ -31,6 +31,13 @@ An existing local web server on port 8765 must be stopped before starting it.
 Local requests can also be rate-limited by LinkedIn; this uses the user's
 connection and does not bypass LinkedIn's restrictions.
 
+Full-stack AI searches recognise hyphenated, spaced and joined title variants,
+including AI/full-stack word order changes. Candidates must still have an
+engineering/developer title, both full-stack and AI evidence, and at least one
+of those specialisms in the title. Ordinary full-stack jobs that only mention
+AI coding assistants are excluded. Source queries use up to three title families;
+the user's date, remote and geography filters are applied after retrieval.
+
 ## Deploy the backend
 
 The deployed backend is https://jobtool1.vercel.app on **Vercel Hobby**.
@@ -100,6 +107,12 @@ or unavailable. LinkedIn identity/sign-in tokens do not grant job-search access.
 The cache and connector update passed 121 Python tests and five browser-cache unit tests.
 The connector fetched 10 LinkedIn cards and returned one matching remote job;
 subsequent description checks were rate-limited, and partial coverage was reported.
+
+On 2026-10-20, the original exact-phrase matcher rejected all 568 fetched
+candidates for `Full-Stack AI engineer`, October 13–20. Replaying those same
+candidates through the corrected matcher yielded 13 relevant remote listings,
+including LinkedIn. All 145 Python tests passed. The browser LinkedIn cache
+version was advanced so an earlier empty result cannot hide the correction.
 
 For free hosting, each platform returns up to 100 matches and 240 KB of text.
 Descriptions are excerpts of up to 2000 characters; original listings are linked.

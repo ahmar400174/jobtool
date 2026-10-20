@@ -11,6 +11,7 @@ import re
 import logging
 
 from job_finder.models import JobListing
+from job_finder.search_terms import is_full_stack_ai_role, normalise_role
 
 log = logging.getLogger("job_finder.matcher")
 
@@ -185,6 +186,9 @@ def _normalise(text: str) -> str:
 def _get_catalogue(requested_role: str) -> dict:
     """Find the best matching catalogue entry for the requested role."""
     role = _normalise(requested_role)
+    if is_full_stack_ai_role(role):
+        return {"full_stack_ai": True, "include": [], "exclude": [],
+                "desc_kw": ["full stack", "full-stack", "llm", "generative ai", "machine learning", "rag"]}
     if role in {"software", "software engineering", "software development", "software engineer", "software developer",
                 "software engineers", "software developers", "programming", "programmer"}:
         return _PROFESSION_CATALOGUE["software"]
@@ -236,6 +240,27 @@ def _title_score(title_lower: str, catalogue: dict) -> tuple[int, str]:
             return SCORE_RELATED_TITLE, f"Related title match: '{inc}'"
 
     return SCORE_WRONG_PROF, "Title does not match requested role"
+
+
+def _full_stack_ai_title_score(job):
+    """Recognise compound roles without admitting generic software/AI jobs."""
+    title = normalise_role(job.title)
+    context = normalise_role(f"{job.description} {job.tags}")
+    if re.search(r"\b(?:qa|sdet|quality assurance|sales|solutions|recruiter|advocate|marketing|support|manager|director)\b", title):
+        return SCORE_WRONG_PROF, "Excluded keyword in title: not an engineering/development role for this search"
+    engineering_title = re.search(r"\b(?:engineer|developer|programmer|swe)\b", title)
+    full_stack_title = "full stack" in title
+    full_stack = full_stack_title or "full stack" in context
+    ai_title = re.search(r"\b(?:ai|artificial intelligence|genai|ml|llms?|machine learning)\b", title)
+    ai_work = re.search(
+        r"\b(?:artificial intelligence|generative ai|genai|machine learning|llms?|large language models?|"
+        r"retrieval augmented generation|rag|ai(?: (?:powered|driven|native|enabled))? "
+        r"(?:products?|features?|applications?|systems?|models?|integrations?|platforms?|agents?))\b", context)
+    if not engineering_title or not full_stack or not (ai_title or ai_work) or not (full_stack_title or ai_title):
+        return SCORE_WRONG_PROF, "Title does not match requested role: full-stack engineering and AI evidence are both required"
+    strong = full_stack_title and ai_title
+    return (SCORE_STRONG_TITLE if strong else SCORE_RELATED_TITLE,
+            "Full-stack engineering and AI evidence matched in the title or role details")
 
 
 def _desc_score(description_lower: str, catalogue: dict) -> tuple[int, str]:
@@ -311,7 +336,7 @@ def score_job(
     reasons: list[str] = []
 
     # --- Title (hard gate) ------------------------------------------------
-    t_score, t_reason = _title_score(title_lower, catalogue)
+    t_score, t_reason = _full_stack_ai_title_score(job) if catalogue.get("full_stack_ai") else _title_score(title_lower, catalogue)
     total += t_score
     reasons.append(t_reason)
     if t_score == SCORE_WRONG_PROF:

@@ -1,4 +1,4 @@
-const STORAGE_KEY = 'jobfinder.linkedin.v1';
+const STORAGE_KEY = 'jobfinder.linkedin.v2';
 export const FRESH_MS = 10 * 60 * 1000;
 export const MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
