@@ -189,6 +189,9 @@ def _get_catalogue(requested_role: str) -> dict:
     if is_full_stack_ai_role(role):
         return {"full_stack_ai": True, "include": [], "exclude": [],
                 "desc_kw": ["full stack", "full-stack", "llm", "generative ai", "machine learning", "rag"]}
+    if role in {"ai engineer", "artificial intelligence engineer"}:
+        return {"ai_engineer": True, "include": [], "exclude": [],
+                "desc_kw": ["ai", "artificial intelligence", "llm", "agents", "automation"]}
     if role in {"full stack developer", "full stack engineer", "fullstack developer", "fullstack engineer"}:
         return {
             "include": ["full stack developer", "full stack engineer", "full-stack developer",
@@ -270,6 +273,20 @@ def _full_stack_ai_title_score(job):
             "Full-stack engineering and AI evidence matched in the title or role details")
 
 
+def _ai_engineer_title_score(job):
+    """Include AI engineering title variants without matching unrelated AI roles."""
+    title = normalise_role(job.title)
+    if not re.search(r"\b(?:ai|artificial intelligence|genai)\b", title):
+        return SCORE_WRONG_PROF, "Title does not mention AI"
+    if not re.search(r"\b(?:engineer|developer|swe)\b", title):
+        return SCORE_WRONG_PROF, "Title is not an engineering or developer role"
+    if re.search(r"\b(?:recruiter|sales|customer success|support)\b", title):
+        return SCORE_WRONG_PROF, "Excluded non-development role"
+    strong = bool(re.search(r"\b(?:ai|artificial intelligence|genai) engineer\b", title))
+    return (SCORE_STRONG_TITLE if strong else SCORE_RELATED_TITLE,
+            "AI and engineering/developer terms matched in title")
+
+
 def _desc_score(description_lower: str, catalogue: dict) -> tuple[int, str]:
     matched = [kw for kw in catalogue["desc_kw"] if kw in description_lower]
     if len(matched) >= 2:
@@ -343,7 +360,9 @@ def score_job(
     reasons: list[str] = []
 
     # --- Title (hard gate) ------------------------------------------------
-    t_score, t_reason = _full_stack_ai_title_score(job) if catalogue.get("full_stack_ai") else _title_score(title_lower, catalogue)
+    t_score, t_reason = (_full_stack_ai_title_score(job) if catalogue.get("full_stack_ai")
+                         else _ai_engineer_title_score(job) if catalogue.get("ai_engineer")
+                         else _title_score(title_lower, catalogue))
     total += t_score
     reasons.append(t_reason)
     if t_score == SCORE_WRONG_PROF:

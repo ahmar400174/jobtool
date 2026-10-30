@@ -18,6 +18,7 @@ def query_terms(keywords):
     for role in keywords or ["QA Engineer"]:
         normal = normalise_role(role)
         variants = ["full stack AI engineer", "full stack engineer", "AI engineer"] if is_full_stack_ai_role(role) else {
+            "ai engineer": ["AI engineer", "applied AI engineer", "AI software engineer", "AI developer"],
             "full stack developer": ["full stack developer", "full stack engineer", "fullstack developer", "fullstack engineer"],
             "full stack engineer": ["full stack engineer", "full stack developer", "fullstack engineer", "fullstack developer"],
             "software engineering": ["software engineer", "software developer", "full stack developer"],
