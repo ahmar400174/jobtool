@@ -189,6 +189,13 @@ def _get_catalogue(requested_role: str) -> dict:
     if is_full_stack_ai_role(role):
         return {"full_stack_ai": True, "include": [], "exclude": [],
                 "desc_kw": ["full stack", "full-stack", "llm", "generative ai", "machine learning", "rag"]}
+    if role in {"full stack developer", "full stack engineer", "fullstack developer", "fullstack engineer"}:
+        return {
+            "include": ["full stack developer", "full stack engineer", "full-stack developer",
+                        "full-stack engineer", "fullstack developer", "fullstack engineer"],
+            "exclude": [],
+            "desc_kw": ["full stack", "full-stack", "react", "next.js", "node.js", "typescript"],
+        }
     if role in {"software", "software engineering", "software development", "software engineer", "software developer",
                 "software engineers", "software developers", "programming", "programmer"}:
         return _PROFESSION_CATALOGUE["software"]

@@ -143,7 +143,21 @@ function complete(data) {
   if (data.count) renderMore();
   else {
     const empty = node('div', undefined, 'empty');
-    empty.append(node('h3', 'No matches this time.'), node('p', 'Try a broader role, a wider date range, or include undated listings.'));
+    const reasons = data.filter_counts || {};
+    const filtered = Object.values(reasons).reduce((totals, counts) => {
+      for (const [key, value] of Object.entries(counts)) totals[key] = (totals[key] || 0) + value;
+      return totals;
+    }, {});
+    const details = [];
+    if (filtered.fetched) {
+      details.push(`${filtered.fetched} listings fetched`);
+      if (filtered.role) details.push(`${filtered.role} title mismatches`);
+      if (filtered.workplace) details.push(`${filtered.workplace} workplace mismatches`);
+      if (filtered.location) details.push(`${filtered.location} location restrictions`);
+      if (filtered.date_range || filtered.undated) details.push(`${(filtered.date_range || 0) + (filtered.undated || 0)} outside date range or undated`);
+      if (filtered.pakistan) details.push(`${filtered.pakistan} Pakistan-only roles excluded`);
+    }
+    empty.append(node('h3', 'No matches this time.'), node('p', details.length ? details.join(' · ') : 'No listings were fetched. Check platform coverage and issues below.'));
     $('results').append(empty);
   }
   $('download').hidden = !data.download_available;
@@ -170,7 +184,7 @@ async function searchPlatforms(search) {
   const cacheSearch = { ...search, linkedin_connection: localLinkedIn ? 'local' : 'cloud' };
   const parts = new Array(search.sources.length);
   const events = [];
-  const warnings = {}, errors = {}, statuses = {};
+  const warnings = {}, errors = {}, statuses = {}, filterCounts = {};
   let linkedinCached = false, linkedinRetryAfter = 0;
   let next = 0;
   async function worker() {
@@ -201,6 +215,7 @@ async function searchPlatforms(search) {
           linkedinRetryAfter = result.retry_after_seconds || 0;
         }
         parts[index] = result.jobs;
+        Object.assign(filterCounts, result.filter_counts || {});
         const active = Object.entries(result.source_statuses).find(([, value]) => value !== 'disabled');
         if (active) { label = active[0]; statuses[label] = active[1]; }
         Object.assign(warnings, result.warnings); Object.assign(errors, result.errors);
@@ -234,6 +249,7 @@ async function searchPlatforms(search) {
   const days = Math.max(1, Math.ceil((Date.now() - Date.parse(search.start_date)) / 86400000) + 1);
   linkedinSearch.searchParams.set('f_TPR', `r${days * 86400}`);
   complete({ ...merged, download_available: merged.count > 0, warnings, errors, source_statuses: statuses,
+    filter_counts: filterCounts,
     linkedin_search_url: linkedinSearch.href, linkedin_cached: linkedinCached, linkedin_retry_after: linkedinRetryAfter,
     elapsed_seconds: (performance.now() - started) / 1000,
     coverage: 'Free hosting checks up to 1 LinkedIn page per query, 2 Himalayas/public pages, and 30 comments in one HN thread. Each platform returns up to 100 matches with description excerpts; original listings contain the full details.' });

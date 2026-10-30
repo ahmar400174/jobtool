@@ -1,9 +1,10 @@
-const STORAGE_KEY = 'jobfinder.linkedin.v2';
+const STORAGE_KEY = 'jobfinder.linkedin.v3';
+const MATCH_VERSION = 2;
 export const FRESH_MS = 10 * 60 * 1000;
 export const MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 function searchKey(search) {
-  return JSON.stringify({ role: search.role.trim().toLowerCase().replace(/\s+/g, ' '), country: search.country,
+  return JSON.stringify({ match_version: MATCH_VERSION, role: search.role.trim().toLowerCase().replace(/\s+/g, ' '), country: search.country,
     start_date: search.start_date, end_date: search.end_date, remote_only: search.remote_only,
     exclude_pakistan: search.exclude_pakistan, include_undated: search.include_undated,
     connection: search.linkedin_connection || 'cloud' });

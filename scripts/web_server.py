@@ -139,7 +139,7 @@ def source_payload(settings, source_key):
             warnings.setdefault(job.source, []).append("Result text exceeded the free response size limit; narrow your search to retrieve more matches.")
             break
         rows.append(row)
-    return dict(jobs=rows, count=len(rows), fetched=dict(counts), source_statuses=counts.statuses,
+    return dict(jobs=rows, count=len(rows), fetched=dict(counts), filter_counts=counts.filters, source_statuses=counts.statuses,
                 errors=counts.errors, warnings=warnings, elapsed_seconds=counts.elapsed_seconds)
 
 
